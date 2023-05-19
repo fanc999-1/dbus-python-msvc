@@ -1,0 +1,82 @@
+--- a/setup.py	2022-09-06 21:52:12.000000000 +0800
++++ b/setup.py	2023-05-19 11:33:15.898797500 +0800
+@@ -29,26 +29,41 @@
+ from distutils.file_util import copy_file
+ from setuptools.dist import Distribution
+ from setuptools import setup, Extension
++from nmake.prebuild import get_version
+ import os
+ import subprocess
+ import sys
+ 
+ 
+-if (
+-    os.environ.get('DBUS_PYTHON_USE_AUTOTOOLS', '')
+-    or sys.version_info < (3, 7)
+-):
++use_autotools = False
++use_nmake = False
++
++setup_requires_base = ['setuptools', 'wheel']
++setup_requires_meson = ['meson>=0.60.0', 'ninja'] + setup_requires_base
++
++if os.environ.get('DBUS_PYTHON_USE_AUTOTOOLS', ''):
+     use_autotools = True
+-    setup_requires = ['setuptools', 'wheel']
++    setup_requires = setup_requires_base
++elif (os.environ.get('WindowsSdkDir', '') or os.environ.get('DISTUTILS_USE_SDK', '')) \
++    and os.environ.get('VCINSTALLDIR', ''):
++    if os.environ.get('DBUS_PYTHON_USE_MESON', ''):
++        use_nmake = False
++        setup_requires = setup_requires_meson
++    else:
++        use_nmake = True
++        setup_requires = setup_requires_base
+ else:
+     use_autotools = False
+-    setup_requires = ['meson>=0.60.0', 'ninja', 'setuptools', 'wheel']
++    setup_requires = setup_requires_meson
+ 
+ if os.path.exists('.version'):
+     version = open('.version').read().strip()
+ elif use_autotools:
+     version = subprocess.check_output(['autoconf', '--trace', 'AC_INIT:$2',
+         'configure.ac']).decode('utf-8').strip()
++elif use_nmake:
++    ver = get_version('.')
++    version = ver['PACKAGE_VERSION']
+ else:
+     with open('meson.build') as reader:
+         for line in reader:
+@@ -92,6 +107,31 @@
+             ]
+             subprocess.check_call(['make', '-C', builddir] + make_args)
+             subprocess.check_call(['make', '-C', builddir, 'install'] + make_args)
++        elif use_nmake:
++            nmake_subdir = os.path.join(srcdir, 'nmake')
++            config_h_msvc = os.path.join(nmake_subdir, 'config.h.msvc')
++            config_msvc_mak = os.path.join(nmake_subdir, 'config-msvc.mak')
++            if not os.path.exists(config_h_msvc) or \
++               not os.path.exists(config_msvc_mak):
++                subprocess.check_call([
++                    'nmake', '-f', 'generate-msvc.mak',
++                    'generate-nmake-files',
++                    'PYTHON='+sys.executable,
++                ],
++                cwd=nmake_subdir)
++            if self.debug:
++                build_cfg = 'debug'
++            else:
++                build_cfg = 'release'
++            subprocess.check_call([
++                'nmake', '-f', 'Makefile.vc',
++                'CFG=' + build_cfg,
++                'PYTHON='+sys.executable,
++                'OBJDIR_BASE='+builddir,
++                'OUTDIR='+os.path.join(srcdir, self.build_lib),
++                'prep-wheel',
++                ],
++                cwd=nmake_subdir)
+         else:
+             subprocess.check_call(
+                 [
