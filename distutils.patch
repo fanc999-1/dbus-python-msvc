@@ -1,0 +1,106 @@
+--- a/setup.py	2019-09-12 17:03:47.000000000 +0800
++++ b/setup.py	2023-05-19 12:14:16.390524200 +0800
+@@ -29,15 +29,28 @@
+ from distutils.file_util import copy_file
+ from setuptools.dist import Distribution
+ from setuptools import setup, Extension
++from nmake.prebuild import get_version
+ import os
+ import subprocess
+ import sys
+ 
++if os.environ.get('DBUS_PYTHON_USE_AUTOTOOLS', ''):
++    use_autotools = True
++elif (os.environ.get('WindowsSdkDir', '') or os.environ.get('DISTUTILS_USE_SDK', '')) \
++    and os.environ.get('VCINSTALLDIR', ''):
++    use_autotools = False
++else:
++    use_autotools = True 
++
+ if os.path.exists('.version'):
+     version = open('.version').read().strip()
+ else:
+-    version = subprocess.check_output(['autoconf', '--trace', 'AC_INIT:$2',
+-        'configure.ac']).decode('utf-8').strip()
++    if use_autotools:
++        version = subprocess.check_output(['autoconf', '--trace', 'AC_INIT:$2',
++            'configure.ac']).decode('utf-8').strip()
++    else:
++        ver = get_version('.')
++        version = ver['PACKAGE_VERSION']
+ 
+ class Build(Distribution().get_command_class('build')):
+     """Dummy version of distutils build which runs an Autotools build system
+@@ -47,27 +60,53 @@
+     def run(self):
+         srcdir = os.getcwd()
+         builddir = os.path.join(srcdir, self.build_temp)
+-        configure = os.path.join(srcdir, 'configure')
+         mkpath(builddir)
+ 
+-        if not os.path.exists(configure):
+-            configure = os.path.join(srcdir, 'autogen.sh')
+-
+-        subprocess.check_call([
+-                configure,
+-                '--disable-maintainer-mode',
+-                'PYTHON=' + sys.executable,
+-                # Put the documentation, etc. out of the way: we only want
+-                # the Python code and extensions
+-                '--prefix=' + os.path.join(builddir, 'prefix'),
+-            ],
+-            cwd=builddir)
+-        make_args = [
+-            'pythondir=' + os.path.join(srcdir, self.build_lib),
+-            'pyexecdir=' + os.path.join(srcdir, self.build_lib),
+-        ]
+-        subprocess.check_call(['make', '-C', builddir] + make_args)
+-        subprocess.check_call(['make', '-C', builddir, 'install'] + make_args)
++        if use_autotools:
++            configure = os.path.join(srcdir, 'configure')
++            if not os.path.exists(configure):
++                configure = os.path.join(srcdir, 'autogen.sh')
++
++            subprocess.check_call([
++                    configure,
++                    '--disable-maintainer-mode',
++                    'PYTHON=' + sys.executable,
++                    # Put the documentation, etc. out of the way: we only want
++                    # the Python code and extensions
++                    '--prefix=' + os.path.join(builddir, 'prefix'),
++                ],
++                cwd=builddir)
++            make_args = [
++                'pythondir=' + os.path.join(srcdir, self.build_lib),
++                'pyexecdir=' + os.path.join(srcdir, self.build_lib),
++            ]
++            subprocess.check_call(['make', '-C', builddir] + make_args)
++            subprocess.check_call(['make', '-C', builddir, 'install'] + make_args)
++        else:
++            nmake_subdir = os.path.join(srcdir, 'nmake')
++            config_h_msvc = os.path.join(nmake_subdir, 'config.h.msvc')
++            config_msvc_mak = os.path.join(nmake_subdir, 'config-msvc.mak')
++            if not os.path.exists(config_h_msvc) or \
++               not os.path.exists(config_msvc_mak):
++                subprocess.check_call([
++                    'nmake', '-f', 'generate-msvc.mak',
++                    'generate-nmake-files',
++                    'PYTHON='+sys.executable,
++                ],
++                cwd=nmake_subdir)
++            if self.debug:
++                build_cfg = 'debug'
++            else:
++                build_cfg = 'release'
++            subprocess.check_call([
++                'nmake', '-f', 'Makefile.vc',
++                'CFG=' + build_cfg,
++                'PYTHON='+sys.executable,
++                'OBJDIR_BASE='+builddir,
++                'OUTDIR='+os.path.join(srcdir, self.build_lib),
++                'prep-wheel',
++                ],
++                cwd=nmake_subdir)
+ 
+ class BuildExt(Distribution().get_command_class('build_ext')):
+     def run(self):
