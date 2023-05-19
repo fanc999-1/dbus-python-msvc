@@ -1,0 +1,8 @@
+Please also refer to the dbus-python README file.
+
+This is a set of NMake Makefiles along with patches to the distutils build
+system (setup.py) that permits one to easily build dbus-python on Windows
+using Visual Studio and build binary packages and/or wheels.
+
+Other than the patch to setup.py and the addon files in nmake/, no other
+patches are used against the vanilla dbus-python sources.
