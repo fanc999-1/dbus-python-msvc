@@ -1,0 +1,92 @@
+# NMake Makefile portion for enabling features for Windows builds
+
+# Please do not change anything beneath this line unless maintaining the NMake Makefiles
+DBUS_PYTHON_VER = @PACKAGE_VERSION@
+!if "$(PLAT)" == "Win32"
+PYTHON_PLAT = win32
+!elseif "$(PLAT)" == "x64"
+PYTHON_PLAT = win-amd64
+!elseif "$(PLAT)" == "arm64"
+PYTHON_PLAT = win-arm64
+!endif
+
+TEMP_MAKEFILE = dbus-python-vs$(VSVER)-$(PLAT)-py$(PYTHON_RELEASE)-objs.mak
+
+!ifndef OBJDIR_BASE
+OBJDIR_BASE=vs$(VSVER)-py$(PYTHON_RELEASE)\$(CFG)\$(PLAT)
+!endif
+!ifndef OUTDIR
+OUTDIR=vs$(VSVER)-py$(PYTHON_RELEASE)\$(CFG)\$(PLAT)
+!endif
+
+# Make bin, include and library directories of configurable
+!ifndef BINDIR
+BINDIR=$(PREFIX)\bin
+!endif
+
+!ifndef LIBDIR
+LIBDIR=$(PREFIX)\lib
+!endif
+
+!ifndef INCLUDEDIR
+INCLUDEDIR=$(PREFIX)\include
+!endif
+
+# Make import libs of libdbus configurable
+!ifndef DBUS_LIB
+DBUS_LIB = dbus-1.lib
+!endif
+
+LDFLAGS = $(LDFLAGS) /libpath:$(LIBDIR) /libpath:$(PYTHON_LIBDIR)
+
+# These are the base minimum libraries required for building dbus-python.
+
+# Visual Studio 2015 and later supports the /utf-8 compiler flag
+# that prevents C4819 warnings/errors on non-Western locales
+!if $(VSVER) > 12
+EXTRA_BASE_CFLAGS = /utf-8
+!else
+EXTRA_BASE_CFLAGS =
+!endif
+
+BASE_CFLAGS =				\
+	$(CFLAGS_ADD)			\
+	/FIconfig.h			\
+	/D_CRT_SECURE_NO_WARNINGS	\
+	/D_CRT_NONSTDC_NO_WARNINGS	\
+	$(EXTRA_BASE_CFLAGS)
+
+!if "$(VSVER)" == "9" && "$(PLAT)" == "x64"
+GLIB_BINDINGS_CFLAGS = $(BASE_CFLAGS:/O2=/O1)
+!else
+GLIB_BINDINGS_CFLAGS = $(BASE_CFLAGS)
+!endif
+
+BASE_DEP_INCLUDES =			\
+	/I$(INCLUDEDIR)\dbus-1.0	\
+	/I$(LIBDIR)\dbus-1.0\include	\
+	/I$(PYTHON_INCDIR)	\
+	/I$(INCLUDEDIR)
+
+BASE_DEP_LIBS = $(DBUS_LIB)
+
+BASE_BINDINGS_INCLUDES =	\
+	/I..\include	\
+	/I.	\
+	$(BASE_DEP_INCLUDES)
+
+GLIB_BINDINGS_INCLUDES =	\
+	/I..\subprojects\dbus-gmain	\
+	$(BASE_BINDINGS_INCLUDES)	\
+	/I$(INCLUDEDIR)\glib-2.0	\
+	/I$(LIBDIR)\glib-2.0\include
+
+GLIB_BINDINGS_DEP_LIBS = glib-2.0.lib $(DBUS_LIB)
+
+!if "$(PYTHON_RELEASE)" >= "36"
+DBUS_BINDINGS_PYD = $(OUTDIR)\_dbus_bindings.cp$(PYTHON_RELEASE)-$(PYTHON_PLAT:-=_).pyd
+DBUS_GLIB_BINDINGS_PYD = $(OUTDIR)\_dbus_glib_bindings.cp$(PYTHON_RELEASE)-$(PYTHON_PLAT:-=_).pyd
+!else
+DBUS_BINDINGS_PYD = $(OUTDIR)\_dbus_bindings.pyd
+DBUS_GLIB_BINDINGS_PYD = $(OUTDIR)\_dbus_glib_bindings.pyd
+!endif
